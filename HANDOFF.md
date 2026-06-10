@@ -36,7 +36,7 @@ These are the design lenses every decision routes through. Removing or weakening
 Orb consumption uses an "mass" model: `mass = orb.r² × (gold ? 1.6 : 1)`. Every consumption metric is mass-based:
 
 - **Score** = `mass × 0.4`
-- **Head growth** = `√(player.r² + mass × 0.45)`, capped at 140
+- **Head growth** = `√(player.r² + mass × 0.45)`, capped at 180 (overflow past the cap converts to bonus tail segments)
 - **Tail segments added** scales with `ratio = orb.r / player.r`:
   - ratio < 0.3 → 1 segment
   - 0.3-0.5 → 2 segments
@@ -117,7 +117,7 @@ All change behavior, not just stats. Three random options offered each pick.
 - **HARVEST** (×2): Tail tip drops a small cyan orb every few seconds.
 
 ### Pacing
-Mutation threshold = `400 + (totalLevels × 200)` base mass, plus a dynamic component `player.r² × 0.6` so growing raises the bar. Capped at 2000 base. There's also a hard floor of "at least 6 orbs eaten since last pick" to prevent one giant orb from popping the picker.
+Mutation threshold = `400 + (totalLevels × 200)` base mass, plus a dynamic component `player.r² × 0.6` so growing raises the bar. Capped at 2000 base. There's also a hard floor of "at least 10 orbs eaten since last pick" to prevent one giant orb from popping the picker.
 
 Picking a mutation grants 3 free tail segments as a bonus.
 
@@ -224,7 +224,7 @@ Boring picks. When the slot machine offered three stat boosts, no choice felt me
 
 ### Aggressive predator AI
 Predators chased at 90% player speed and engaged from across the screen. Players couldn't escape simply by growing faster.
-**Replaced with:** predators capped at 50-78% player speed, with quadratic chase ramp (lazy at distance, only aggressive up close). Player speed scales linearly with size, leaving threats behind.
+**Replaced with:** predators capped at 50-78% player speed, with quadratic chase ramp (lazy at distance, only aggressive up close). Player speed scales linearly with size, leaving threats behind. (Since the endgame scaling rework, the size→speed boost caps at 2.6× — see below.)
 
 ### Walls
 Original wall-bounded play area. Caused two problems: prey trapped in corners (too easy), and your own tail forced you into walls (death traps).
@@ -256,6 +256,19 @@ These were the last batch of bugs identified and resolved:
 10. Charger lunge re-aim shortened — only first ~10 frames of windup.
 
 ---
+
+## Endgame scaling rework — "Phase 1" (June 2026)
+
+Playtesting found the endgame "miserable." Empirical audit (warping a healthy max-size player into a 10-minute scene) reproduced it: the player died unattended in ~5 game-seconds. Root causes and fixes, all verified in-browser:
+
+1. **Fixed timestep (real bug).** The loop ran one sim tick per `requestAnimationFrame` — game speed was tied to display refresh. On 90-133Hz screens (most modern phones) everything ran 1.5-2.2× designed speed. Now: accumulator at 60 ticks/sec, render per display frame, catch-up capped.
+2. **Speed cap.** `speedScale(r) = 1 + min(r-14, 40) × 0.04`, capping at 2.6× (~r54). Previously linear to 7.2× at max size — the player crossed the visible screen in 0.6s, threats couldn't be seen coming, and dash (a multiplier on base speed) added nothing late. All predator/prey speeds are player-relative, so the cap rescales the whole ecosystem without changing chase balance.
+3. **Red size caps.** After kind multipliers: floor at just-uneatable (fixes low-roll chargers spawning *eatable*), ceiling `min(240-280 jittered, 1.9× player)`. Previously reds hit r 325-590 in a 3800-wide world — covering most of its area.
+4. **Spawn placement fix.** Edge spawns clamp to ≤ WORLD/2 − margin (beyond that the torus folds spawns back toward the player — reds materialized overlapping the head), plus overlap rejection with distributed-scatter fallback.
+5. **Bite overflow cap.** Head shrink per bite ≤ 20% of current radius (was up to 120 flat: two touches ended a 10-min run).
+6. **World 3800 → 6000.** With capped speed, crossing takes ~8s; a max snake no longer spans the world 3× (self-collision stays a navigation puzzle, not unavoidable terrain); a phone's zoomed-out view no longer exceeds the world. New games also seed 8 guaranteed eatables within early reach.
+
+Deferred to later phases: zoom-floor revisit, tail render LOD for low-end phones, and late-game escalation by events/count rather than size (see open issues).
 
 ## Known open issues / next priorities
 
