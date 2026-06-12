@@ -11,9 +11,24 @@ A snake / katamari / roguelike hybrid built as a single-file HTML game. This doc
 
 You are a glowing orb in a starfield void. You drift through an infinite toroidal arena hunting smaller orbs. Each one you devour becomes a segment in your trailing tail. Bigger orbs give more — more mass, more score, more tail — but they're risky. The largest orbs you can barely eat are the most rewarding catch. Periodically, after enough mass consumed, the game offers you three random mutations to pick from.
 
-You die when reds bite off your tail and your head shrinks past its starting size. There's no win condition — you survive as long as you can. Score is the run's currency.
+You die when reds bite off your tail and your head shrinks past its starting size. The objective: grow until your tail ripens, then coil and devour your own tail tip — **closing the loop**. Each closed loop is a rebirth: smaller body, mutations kept, higher next threshold, escalated world. **Loops closed** is the run's headline metric; score is secondary.
 
-The fantasy: a tiny thing that grows into a serpent, navigating its own body as much as the world.
+The fantasy: a tiny thing that grows into a serpent, navigating its own body as much as the world — until it becomes the circle from the myth, and begins again.
+
+---
+
+## The Loop — core objective (June 2026)
+
+Added after a playtest crisis: the game installed a single desire ("grow as big as possible") but its endless-survival structure never contested, marked, or celebrated it — "purposeless, no challenge, not even a game anymore." The Loop aligns structure with desire; it is composed entirely of the existing verbs (eat, grow, avoid-your-tail) rather than imposed on them.
+
+- **Ripeness:** at `G.loopNeed` tail segments (45, +15 per loop) the last 2 segments render gold with a pulsing beacon; HUD TAIL counter reads `n/need` and turns gold.
+- **Closing:** head touching the ripe tip (last 2 segments) calls `closeLoop()` — works mid-dash and while ghosting (it's a meal, not a crash). The coil is the skill test: the bigger you are, the harder the turn.
+- **Rebirth:** in place — head resets to `18 + loops×2` (peak size climbs across the run), tail to 4, mutations and score kept, +`500 + loops×500 + segments×20` score, world despawned and respawned at the new scale (old food would behave as a predator against a small head).
+- **The world fights closure:** while ripe, predator menace ×1.3 and predators hunt the **tail tip** instead of the head; a predator reaching the tip *nips* segments off the end (small bites, per-orb cooldown, one nip per tick). Slipping below the threshold un-ripens you until you regrow. SPIKE defends the tip — existing mutations gain endgame purpose (SERPENT/COMPRESS/GHOSTLINE are the closer's build).
+- **Escalation:** `difficulty()` gains +0.12 per closed loop, permanently.
+- Rebirth also structurally bounds the endgame scale degeneracy the Phase-1 caps were fighting: the game cycles before scale can degenerate.
+
+Speed feel (same pass): speedScale cap 2.6→3.2, big-snake dash gets a size-scaled lunge multiplier (burst-and-glide movement at scale), zoom floor 0.14→0.115.
 
 ---
 
@@ -318,7 +333,7 @@ At low zoom (large player), the colors do most of the work, but the unique visua
 
 These shape the project's identity and don't have right answers yet.
 
-**Should the game have an end?** Currently endless. Could add a "hidden depth" — eat your own tail tip as a triumphant ending. Or stay endless with leaderboards.
+**Should the game have an end?** ANSWERED (June 2026): the Loop — eat your own ripe tail tip, be reborn, repeat until death. Cyclical, not terminal. See "The Loop" section.
 
 **Should reds get more types?** Three feels right but late game gets thin. A fourth type (e.g. an orbit-er that circles you) could add variety without overcomplication.
 

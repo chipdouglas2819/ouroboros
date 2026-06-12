@@ -61,6 +61,11 @@
     text-shadow: 0 0 14px rgba(255, 42, 109, 0.7);
     animation: tailLowPulse 0.8s ease-in-out infinite;
   }
+  .stat-value.tail.ripe {
+    color: #ffe27a;
+    text-shadow: 0 0 14px rgba(255, 226, 122, 0.85);
+    animation: tailLowPulse 1.2s ease-in-out infinite;
+  }
   @keyframes tailLowPulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.6; }
@@ -565,6 +570,10 @@
         <div class="stat-value tail" id="tailLen">0</div>
       </div>
       <div class="stat-row">
+        <div class="stat-glyph">LOOP</div>
+        <div class="stat-value" id="loopVal">0</div>
+      </div>
+      <div class="stat-row">
         <div class="stat-glyph">SCORE</div>
         <div class="stat-value" id="scoreVal">0</div>
       </div>
@@ -607,7 +616,8 @@
       <span class="good">Bigger orbs</span> are riskier but give more<br>
       Avoid <span class="danger">red</span> · <span class="gold">orange chargers lunge</span> · <span class="pink">violet splits</span><br>
       <span class="pink">Hitting yourself cuts where you bite</span><br><br>
-      Eat enough mass to mutate · <span class="gold">survive</span><br><br>
+      Eat mass to mutate · ripen your tail<br>
+      <span class="gold">Devour your own tail · be reborn · loop deeper</span><br><br>
       Drag to steer · <span class="good">⟿</span> or SPACE to dash
     </div>
     <div class="title-best" id="titleBest">
@@ -635,7 +645,7 @@
         <div class="stat-cell-value" id="goOrbs">0</div>
       </div>
       <div class="stat-cell">
-        <div class="stat-cell-label">MASS</div>
+        <div class="stat-cell-label">LOOPS</div>
         <div class="stat-cell-value" id="goCombo">0</div>
       </div>
     </div>
@@ -765,6 +775,12 @@ const SFX = {
   dash() {
     this.tone('sawtooth', 380, 0.12, 0.13, 1400);
   },
+  loopClose() {
+    [523.25, 659.25, 783.99, 1046.5, 1318.51].forEach((f, i) => {
+      setTimeout(() => this.tone('triangle', f, 0.22, 0.14), i * 80);
+    });
+    this.noise(0.08, 0.06);
+  },
   mutationOpen() {
     [392, 523.25, 659.25].forEach((f, i) => {
       setTimeout(() => this.tone('triangle', f, 0.16, 0.12), i * 70);
@@ -845,6 +861,9 @@ const G = {
   paused: false,
   // PHANTOM STORM ghost mines
   ghostMines: [],
+  // The Loop: closing it (eating your own ripe tail tip) is the objective.
+  loops: 0,
+  loopNeed: 45,
 };
 
 // ─── Mutations ────────────────────────────────────────────
@@ -978,9 +997,10 @@ makeStars();
 
 // ─── Difficulty curve ─────────────────────────────────────
 function difficulty() {
-  // 0 to ~1 over 6 minutes, then continues climbing more slowly
+  // 0 to ~1 over 6 minutes — plus a permanent step per closed loop, so the
+  // world escalates with the cycle count, not just the clock.
   const minutes = G.elapsed / (60 * 60);
-  return Math.min(1.5, minutes / 6);
+  return Math.min(1.5, minutes / 6) + (G.loops || 0) * 0.12;
 }
 
 function dangerRatio() {
@@ -1137,6 +1157,22 @@ function trySpawnOrb(distributed = false) {
   fn(r, opts);
 }
 
+// Guarantee some food within early reach — the random scatter over a 6000px
+// world is sparse, and a fresh or freshly-reborn snake shouldn't be dropped
+// into an empty stretch of void.
+function seedNearFood(count) {
+  if (!G.player) return;
+  for (let i = 0; i < count; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const d = 350 + Math.random() * 450;
+    let x = G.player.x + Math.cos(ang) * d;
+    let y = G.player.y + Math.sin(ang) * d;
+    x = ((x % WORLD_W) + WORLD_W) % WORLD_W;
+    y = ((y % WORLD_H) + WORLD_H) % WORLD_H;
+    spawnOrbAt(x, y, eatableSize(G.player.r), {});
+  }
+}
+
 function setupWorld() {
   // Bigger world so growth/exploration feels meaningful and you don't run into yourself often.
   // 6000 (was 3800): with speed capped at 2.6×, crossing takes ~8s instead of
@@ -1166,21 +1202,13 @@ function newGame() {
   pauseOverlayEl.classList.remove('show');
   G.ghostMines = [];
   setupWorld();
+  G.loops = 0;
+  G.loopNeed = 45;
   G.player = createPlayer();
   G.orbs = [];
   for (let i = 0; i < 28; i++) trySpawnOrb(true);
-  // Bigger world means the random scatter is sparser — guarantee some food
-  // within early reach so the first 30 seconds aren't an empty trek.
-  for (let i = 0; i < 8; i++) {
-    const ang = Math.random() * Math.PI * 2;
-    const d = 350 + Math.random() * 450;
-    let x = G.player.x + Math.cos(ang) * d;
-    let y = G.player.y + Math.sin(ang) * d;
-    x = ((x % WORLD_W) + WORLD_W) % WORLD_W;
-    y = ((y % WORLD_H) + WORLD_H) % WORLD_H;
-    spawnOrbAt(x, y, eatableSize(G.player.r), {});
-  }
-  camera.zoom = camera.targetZoom = clamp(14 / G.player.r, 0.14, 0.7);
+  seedNearFood(8);
+  camera.zoom = camera.targetZoom = clamp(14 / G.player.r, 0.115, 0.7);
   camera.x = G.player.x - W / camera.zoom / 2;
   camera.y = G.player.y - H / camera.zoom / 2;
   G.state = 'playing';
@@ -1299,15 +1327,16 @@ function addPopup(x, y, text, color, big = false) {
 }
 
 // ─── Mechanics ────────────────────────────────────────────
-// Speed growth caps at 2.6× (reached around r≈54). Early growth still
+// Speed growth caps at 3.2× (reached around r≈69). Early growth still
 // accelerates you — the katamari rush — but past the cap, growing gives
 // reach and mass, not velocity. Uncapped linear scaling hit 7.2× at max
-// size: the player crossed the entire visible screen in ~0.6s, no threat
-// could be seen coming, and dash (a fixed multiplier of base speed) added
-// nothing. All predator/prey speeds are fractions of player speed, so
-// capping here rescales the whole ecosystem without changing chase balance.
+// size: the player crossed the entire visible screen in ~0.6s and no threat
+// could be seen coming. All predator/prey speeds are fractions of player
+// speed, so the cap rescales the whole ecosystem without changing chase
+// balance. (2.6 in the first scaling pass; raised after playtest feedback
+// that big-snake movement felt sluggish.)
 function speedScale(r) {
-  return 1 + Math.min(r - 14, 40) * 0.04;
+  return 1 + Math.min(r - 14, 55) * 0.04;
 }
 
 function canEat(p, o) {
@@ -1336,9 +1365,13 @@ function tryDash(p, ix, iy) {
     else { dx = p.lastDir.x; dy = p.lastDir.y; }
   }
   const stats = getDashStats();
-  // Compute actual dash speed using current player size — must exceed normal max speed
+  // Compute actual dash speed using current player size — must exceed normal max speed.
+  // Big snakes get an extra lunge multiplier: base speed is capped by
+  // speedScale, so dash becomes the leviathan's burst — movement at scale
+  // is burst-and-glide rather than a faster cruise.
   const baseMaxSpeed = 4.6 * speedScale(p.r);
-  const dashSpeed = baseMaxSpeed * stats.speedMult;
+  const sizeLunge = Math.min(Math.max(p.r - 54, 0) * 0.004, 0.5);
+  const dashSpeed = baseMaxSpeed * (stats.speedMult + sizeLunge);
   p.dashFrames = stats.duration;
   p.dashCd = stats.cooldown;
   p.iframes = Math.max(p.iframes, stats.iframes);
@@ -1771,7 +1804,7 @@ function updateCamera() {
   if (!G.player) return;
   const tailReach = G.player.tail.length > 0 ? G.player.tail.length * 12 : 0;
   const effective = G.player.r + tailReach * 0.15;
-  camera.targetZoom = clamp(14 / Math.max(20, effective), 0.14, 0.7);
+  camera.targetZoom = clamp(14 / Math.max(20, effective), 0.115, 0.7);
   camera.zoom += (camera.targetZoom - camera.zoom) * 0.05;
 
   const viewW = W / camera.zoom;
@@ -1992,6 +2025,25 @@ function gameTick() {
     if (p.path.length > 80) p.path.splice(0, p.path.length - 80);
   }
 
+  // The Loop: when the tail is ripe, eating your own tip is the objective.
+  // Checked before (and independently of) self-collision damage — closing
+  // the loop is a meal, not a crash, so it works mid-dash and while
+  // ghosting. The last 2 segments count as the tip: the coil is a skill
+  // test, not pixel-perfect torture.
+  const ripeNow = p.tail.length >= G.loopNeed;
+  let nippedThisTick = false;
+  if (ripeNow && p.tail.length >= 6) {
+    for (let i = Math.max(4, p.tail.length - 2); i < p.tail.length; i++) {
+      const s = p.tail[i];
+      if (s.age < 30) continue;
+      const wdTip = wrapDelta(s.x, s.y, p.x, p.y);
+      if (Math.hypot(wdTip.dx, wdTip.dy) < p.r + s.r * 0.7) {
+        closeLoop();
+        break;
+      }
+    }
+  }
+
   // Self-collision (snake bite) — but not during invulnerability frames
   if (p.ghostFrames <= 0 && p.dashFrames <= 0 && p.iframes <= 0 && p.tail.length >= 6) {
     for (let i = 4; i < p.tail.length; i++) {
@@ -2054,10 +2106,11 @@ function gameTick() {
     }
   }
 
-  // Orb behavior
+  // Orb behavior. While the loop is ripe the world turns up the pressure —
+  // the finale is a contest for your own tail.
   const viewSize = Math.min(W, H) / camera.zoom;
   const awareRange = clamp(viewSize * 0.55, 250, 900);
-  const m = predatorMenace();
+  const m = predatorMenace() * (ripeNow ? 1.3 : 1);
   const thresh = eatThreshold();
 
   for (let i = G.orbs.length - 1; i >= 0; i--) {
@@ -2074,13 +2127,24 @@ function gameTick() {
     const isPrey = ratio < thresh * 0.85;
     const isPredator = ratio > thresh * 1.05;
 
+    // Hunt target: predators chase the head — except while the loop is
+    // ripe, when they hunt the tail TIP instead. (hx, hy, hd) is whatever
+    // they're hunting; collision below still uses head distance d.
+    let hx = dx, hy = dy, hd = d;
+    if (ripeNow && isPredator && p.tail.length > 0) {
+      const tip = p.tail[p.tail.length - 1];
+      const wdT = wrapDelta(o.x, o.y, tip.x, tip.y);
+      hx = wdT.dx; hy = wdT.dy;
+      hd = Math.hypot(hx, hy) || 0.1;
+    }
+
     o.wanderTimer--;
     if (o.wanderTimer <= 0) {
       o.wanderAng += (Math.random() - 0.5) * 1.2;
       o.wanderTimer = 30 + Math.floor(Math.random() * 60);
     }
     const predAwareRange = awareRange * (0.55 + 0.55 * m);
-    const isPursuing = isPredator && d < predAwareRange;
+    const isPursuing = isPredator && hd < predAwareRange;
     const wanderForce = isPursuing ? 0.05 : 0.18;
     o.vx += Math.cos(o.wanderAng) * wanderForce;
     o.vy += Math.sin(o.wanderAng) * wanderForce;
@@ -2103,12 +2167,12 @@ function gameTick() {
       o.chargeTimer--;
       if (o.chargeState === 'idle') {
         // Wander gently while in idle. Trigger windup when player is in mid-range.
-        if (o.chargeTimer <= 0 && d < predAwareRange * 0.7 && d > p.r + o.r + 30) {
+        if (o.chargeTimer <= 0 && hd < predAwareRange * 0.7 && hd > p.r + o.r + 30) {
           o.chargeState = 'windup';
           o.chargeTimer = 50; // ~0.8s telegraph
           // Lock direction at windup time (player can sidestep!)
-          o.chargeDir.x = dx / d;
-          o.chargeDir.y = dy / d;
+          o.chargeDir.x = hx / hd;
+          o.chargeDir.y = hy / hd;
         }
       } else if (o.chargeState === 'windup') {
         // Slow during windup (visible "stop")
@@ -2117,8 +2181,8 @@ function gameTick() {
         // Re-aim slightly toward player only in the first ~12 frames (early windup),
         // then lock the direction. Gives the player a real window to commit to a sidestep.
         if (o.chargeTimer > 38) {
-          o.chargeDir.x = lerp(o.chargeDir.x, dx / d, 0.05);
-          o.chargeDir.y = lerp(o.chargeDir.y, dy / d, 0.05);
+          o.chargeDir.x = lerp(o.chargeDir.x, hx / hd, 0.05);
+          o.chargeDir.y = lerp(o.chargeDir.y, hy / hd, 0.05);
           const m2 = Math.hypot(o.chargeDir.x, o.chargeDir.y) || 1;
           o.chargeDir.x /= m2; o.chargeDir.y /= m2;
         }
@@ -2147,10 +2211,10 @@ function gameTick() {
         }
       }
     } else if (isPursuing) {
-      const t = 1 - d / predAwareRange;
+      const t = 1 - hd / predAwareRange;
       const chase = t * t * 0.85 * m;
-      o.vx += (dx / d) * chase;
-      o.vy += (dy / d) * chase;
+      o.vx += (hx / hd) * chase;
+      o.vy += (hy / hd) * chase;
     }
 
     let orbMaxSp;
@@ -2205,6 +2269,33 @@ function gameTick() {
     }
 
     if (i >= G.orbs.length) continue;
+
+    // Ripe-tip raiding: while the loop is ready, a predator that reaches
+    // the tail tip nips segments off the end. Small bites — the threat is
+    // the swarm and slipping back below the ripeness threshold, not
+    // instant devastation. One nip per tick, per-orb cooldown after.
+    if (ripeNow && !nippedThisTick && isPredator && o.iframes <= 0 && o.spawning <= 0 && p.tail.length > 4) {
+      const tip = p.tail[p.tail.length - 1];
+      const wdN = wrapDelta(o.x, o.y, tip.x, tip.y);
+      if (Math.hypot(wdN.dx, wdN.dy) < o.r + tip.r) {
+        const nip = Math.max(2, Math.min(3 + Math.floor(o.r / 80), Math.ceil(p.tail.length * 0.12)));
+        const cutFrom = Math.max(0, p.tail.length - nip);
+        burst(tip.x, tip.y, 14, 350, 3, 0.7);
+        for (let k = cutFrom; k < p.tail.length; k++) {
+          burst(p.tail[k].x, p.tail[k].y, 3, p.tail[k].hue, 1.5, 0.4);
+        }
+        p.tail.length = cutFrom;
+        addPopup(tip.x, tip.y, `−${nip}`, '#ff5588');
+        nippedThisTick = true;
+        o.iframes = 50;
+        const angN = Math.atan2(wdN.dy, wdN.dx);
+        o.vx -= Math.cos(angN) * 4;
+        o.vy -= Math.sin(angN) * 4;
+        o.angerJitter = 6;
+        SFX.damage();
+        updateHUD();
+      }
+    }
 
     // Player-orb collision (use wrapped distance)
     if (d < p.r + o.r && o.spawning <= 6) {
@@ -2524,17 +2615,21 @@ function drawOrb(o, eatable) {
 }
 
 function drawTail(p) {
-  // Draw from tail-end forward so head segments overlap correctly
+  // Draw from tail-end forward so head segments overlap correctly.
+  // When the loop is ripe, the last 2 segments — the edible tip — render
+  // gold with a pulsing beacon so the target reads instantly.
+  const ripeFrom = p.tail.length >= G.loopNeed ? p.tail.length - 2 : Infinity;
   for (let i = p.tail.length - 1; i >= 0; i--) {
     const s = p.tail[i];
     const r = s.r;
+    const goldish = s.gold || i >= ripeFrom;
     const isGhost = p.ghostFrames > 0 || p.dashFrames > 0;
     const alpha = isGhost ? 0.45 : 1;
 
     // Halo
     const haloR = r * 2.2;
     const halo = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, haloR);
-    if (s.gold) {
+    if (goldish) {
       halo.addColorStop(0, `rgba(255, 220, 100, ${0.45 * alpha})`);
       halo.addColorStop(1, 'rgba(255, 184, 77, 0)');
     } else {
@@ -2548,7 +2643,7 @@ function drawTail(p) {
 
     // Body
     const body = ctx.createRadialGradient(s.x - r * 0.3, s.y - r * 0.3, 0, s.x, s.y, r);
-    if (s.gold) {
+    if (goldish) {
       body.addColorStop(0, `rgba(255, 248, 208, ${alpha})`);
       body.addColorStop(0.5, `rgba(255, 226, 122, ${alpha})`);
       body.addColorStop(1, `rgba(201, 132, 42, ${alpha})`);
@@ -2561,6 +2656,17 @@ function drawTail(p) {
     ctx.beginPath();
     ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
     ctx.fill();
+
+    // Pulsing beacon on the ripe tip itself
+    if (i === p.tail.length - 1 && ripeFrom !== Infinity) {
+      const t = (Date.now() % 600) / 600;
+      const pulse = (Math.sin(t * Math.PI * 2) + 1) / 2;
+      ctx.strokeStyle = `rgba(255, 226, 122, ${0.5 + pulse * 0.5})`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r + 6 + pulse * 7, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   }
 }
 
@@ -2918,6 +3024,7 @@ function draw() {
 // ─── HUD ──────────────────────────────────────────────────
 const scoreValEl = document.getElementById('scoreVal');
 const tailLenEl = document.getElementById('tailLen');
+const loopValEl = document.getElementById('loopVal');
 const timeValEl = document.getElementById('timeVal');
 const nextMutFillEl = document.getElementById('nextMutFill');
 const activeMutsEl = document.getElementById('activeMuts');
@@ -2933,8 +3040,10 @@ function updateHUD() {
   if (!G.player) return;
   scoreValEl.textContent = G.score.toLocaleString();
   const tailCount = G.player.tail.length;
-  tailLenEl.textContent = tailCount;
+  tailLenEl.textContent = `${tailCount}/${G.loopNeed}`;
   tailLenEl.classList.toggle('low', tailCount < 4);
+  tailLenEl.classList.toggle('ripe', tailCount >= G.loopNeed);
+  loopValEl.textContent = G.loops;
   timeValEl.textContent = fmtTime(G.elapsed);
   // Progress reflects the same dynamic threshold the gameplay uses
   const dynamicThreshold = G.massToNextMut + G.player.r * G.player.r * 0.9;
@@ -3084,6 +3193,60 @@ function pickMutation(m) {
   updateHUD();
 }
 
+// ─── Closing the loop ─────────────────────────────────────
+// The objective: grow until the tail ripens (G.loopNeed segments), then
+// coil and devour your own tail tip. Rebirth in place — smaller, mutations
+// and score kept, the requirement higher, the world refreshed to your new
+// scale. Loops closed is the run's headline metric.
+function closeLoop() {
+  const p = G.player;
+  G.loops++;
+  const bonus = 500 + G.loops * 500 + p.tail.length * 20;
+  G.score += bonus;
+
+  G.shake = 20;
+  G.flash = 0.8;
+  G.flashColor = [255, 226, 122];
+  burst(p.x, p.y, 50, 50, 6, 1.2);
+  for (let i = 0; i < 40; i++) {
+    const ang = (i / 40) * Math.PI * 2;
+    G.particles.push({
+      x: p.x, y: p.y,
+      vx: Math.cos(ang) * 7, vy: Math.sin(ang) * 7,
+      r: 3, life: 1.1, maxLife: 1.1, hue: 50,
+    });
+  }
+  SFX.loopClose();
+  addPopup(p.x, p.y - p.r - 12, `+${bonus}`, '#ffe27a', true);
+
+  const aEl = document.getElementById('mutAnnounce');
+  document.getElementById('mutAnnounceGlyph').textContent = '∞';
+  document.getElementById('mutAnnounceName').textContent = `LOOP ${G.loops} CLOSED`;
+  aEl.classList.remove('show');
+  void aEl.offsetWidth;
+  aEl.classList.add('show');
+
+  // Rebirth: shrink in place. Hatch size grows slightly per loop so peak
+  // size still climbs across the run — you revisit bigness from below
+  // instead of plateauing in it.
+  p.r = 18 + G.loops * 2;
+  if (p.tail.length > 4) p.tail.splice(4);
+  for (const s of p.tail) { s.r = p.r * 0.6; s.gold = false; }
+  p.iframes = 120;
+  p.ghostFrames = 60;
+  p.vx = 0; p.vy = 0;
+
+  // The world is reborn with you. Orbs sized for the old giant would break
+  // scale for a small head — old "food" would behave as a predator.
+  G.orbs = [];
+  G.ghostMines = [];
+  for (let i = 0; i < 24; i++) trySpawnOrb(true);
+  seedNearFood(8);
+
+  G.loopNeed += 15;
+  updateHUD();
+}
+
 // ─── Game over ────────────────────────────────────────────
 function renderGameOverPairings() {
   const wrapEl = document.getElementById('goPairings');
@@ -3132,7 +3295,7 @@ function gameOver() {
   document.getElementById('goScore').textContent = G.score.toLocaleString();
   document.getElementById('goTime').textContent = fmtTime(G.elapsed);
   document.getElementById('goOrbs').textContent = G.orbsEaten;
-  document.getElementById('goCombo').textContent = Math.round(G.mass).toLocaleString();
+  document.getElementById('goCombo').textContent = G.loops;
 
   const goBestEl = document.getElementById('goBest');
   if (STORAGE.bestScore > 0) {
